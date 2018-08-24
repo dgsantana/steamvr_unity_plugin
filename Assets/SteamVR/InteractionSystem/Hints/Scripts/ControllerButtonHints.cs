@@ -18,6 +18,9 @@ namespace Valve.VR.InteractionSystem
 		public Color flashColor = new Color( 1.0f, 0.557f, 0.0f );
 		public GameObject textHintPrefab;
 
+        [SteamVR_DefaultAction("Haptic")]
+        public SteamVR_Action_Vibration hapticFlash;
+
 		[Header( "Debug" )]
 		public bool debugHints = false;
 
@@ -60,7 +63,7 @@ namespace Valve.VR.InteractionSystem
 			public bool textHintActive = false;
 		}
 
-		private Dictionary<SteamVR_Input_Action_In, ActionHintInfo> actionHintInfos;
+		private Dictionary<SteamVR_Action_In, ActionHintInfo> actionHintInfos;
 		private Transform textHintParent;
 
 		private int colorID;
@@ -70,9 +73,10 @@ namespace Valve.VR.InteractionSystem
 
 		SteamVR_Events.Action renderModelLoadedAction;
 
-		
-		//-------------------------------------------------
-		void Awake()
+        protected SteamVR_Input_Sources inputSource;
+
+        //-------------------------------------------------
+        void Awake()
 		{
 			renderModelLoadedAction = SteamVR_Events.RenderModelLoadedAction( OnRenderModelLoaded );
 			colorID = Shader.PropertyToID( "_Color" );
@@ -120,10 +124,17 @@ namespace Valve.VR.InteractionSystem
 		}
 
 
-		//-------------------------------------------------
-		// Gets called when the hand has been initialized and a render model has been set
-		//-------------------------------------------------
-		private void OnHandInitialized(int deviceIndex)
+        public virtual void SetInputSource(SteamVR_Input_Sources newInputSource)
+        {
+            inputSource = newInputSource;
+            if (renderModel != null)
+                renderModel.SetInputSource(newInputSource);
+        }
+
+        //-------------------------------------------------
+        // Gets called when the hand has been initialized and a render model has been set
+        //-------------------------------------------------
+        private void OnHandInitialized(int deviceIndex)
         {
 			//Create a new render model for the controller hints
 			renderModel = new GameObject( "SteamVR_RenderModel" ).AddComponent<SteamVR_RenderModel>();
@@ -131,9 +142,11 @@ namespace Valve.VR.InteractionSystem
 			renderModel.transform.localPosition = Vector3.zero;
 			renderModel.transform.localRotation = Quaternion.identity;
 			renderModel.transform.localScale = Vector3.one;
-			renderModel.SetDeviceIndex( deviceIndex );
 
-			if ( !initialized )
+            renderModel.SetInputSource(inputSource);
+            renderModel.SetDeviceIndex(deviceIndex);
+
+            if ( !initialized )
 			{
 				//The controller hint render model needs to be active to get accurate transforms for all the individual components
 				renderModel.gameObject.SetActive( true );
@@ -143,66 +156,84 @@ namespace Valve.VR.InteractionSystem
 
         private Dictionary<string, Transform> componentTransformMap = new Dictionary<string, Transform>();
 
-		//-------------------------------------------------
-		void OnRenderModelLoaded( SteamVR_RenderModel renderModel, bool succeess )
-		{
-			//Only initialize when the render model for the controller hints has been loaded
-			if ( renderModel == this.renderModel )
-			{
-				textHintParent = new GameObject( "Text Hints" ).transform;
-				textHintParent.SetParent( this.transform );
-				textHintParent.localPosition = Vector3.zero;
-				textHintParent.localRotation = Quaternion.identity;
-				textHintParent.localScale = Vector3.one;
-
-				//Get the button mask for each component of the render model
-				using ( var holder = new SteamVR_RenderModel.RenderModelInterfaceHolder() )
-				{
-					var renderModels = holder.instance;
-					if ( renderModels != null )
-					{
-						string renderModelDebug = "Components for render model " + renderModel.index;
-						foreach ( Transform child in renderModel.transform )
-						{
-                            componentTransformMap.Add(child.name, child);
-
-							renderModelDebug += "\n\t" + child.name + ".";
-						}
-
-						//Uncomment to show the button mask for each component of the render model
-						HintDebugLog( renderModelDebug );
-					}
-				}
-
-				actionHintInfos = new Dictionary<SteamVR_Input_Action_In, ActionHintInfo>();
-
-                for (int actionIndex = 0; actionIndex < SteamVR_Input.actionsIn.Length; actionIndex++)
+        //-------------------------------------------------
+        void OnRenderModelLoaded(SteamVR_RenderModel renderModel, bool succeess)
+        {
+            //Only initialize when the render model for the controller hints has been loaded
+            if (renderModel == this.renderModel)
+            {
+                //Debug.Log("OnRenderModelLoaded: " + this.renderModel.renderModelName);
+                if (initialized)
                 {
-                    SteamVR_Input_Action_In action = (SteamVR_Input_Action_In)SteamVR_Input.actionsIn[actionIndex];
-
-                    if (action.GetActive())
-                        CreateAndAddButtonInfo(action);
+                    Destroy(textHintParent.gameObject);
+                    componentTransformMap.Clear();
+                    flashingRenderers.Clear();
                 }
 
-				ComputeTextEndTransforms();
+                renderModel.SetMeshRendererState(false);
 
-				initialized = true;
+                StartCoroutine(DoInitialize(renderModel));
+            }
+        }
+        private IEnumerator DoInitialize(SteamVR_RenderModel renderModel)
+        {
+            while (renderModel.initializedAttachPoints == false)
+                yield return null;
 
-				//Set the controller hints render model to not active
-				renderModel.gameObject.SetActive( false );
-			}
-		}
+            textHintParent = new GameObject("Text Hints").transform;
+            textHintParent.SetParent(this.transform);
+            textHintParent.localPosition = Vector3.zero;
+            textHintParent.localRotation = Quaternion.identity;
+            textHintParent.localScale = Vector3.one;
+
+            //Get the button mask for each component of the render model
+            
+            var renderModels = OpenVR.RenderModels;
+            if (renderModels != null)
+            {
+                string renderModelDebug = "Components for render model " + renderModel.index;
+                for (int childIndex = 0; childIndex < renderModel.transform.childCount; childIndex++)
+                {
+                    Transform child = renderModel.transform.GetChild(childIndex);
+
+                    componentTransformMap.Add(child.name, child);
+
+                    renderModelDebug += "\n\t" + child.name + ".";
+                }
+
+                //Uncomment to show the button mask for each component of the render model
+                HintDebugLog(renderModelDebug);
+            }
+
+            actionHintInfos = new Dictionary<SteamVR_Action_In, ActionHintInfo>();
+
+            for (int actionIndex = 0; actionIndex < SteamVR_Input.actionsNonPoseNonSkeletonIn.Length; actionIndex++)
+            {
+                SteamVR_Action_In action = (SteamVR_Action_In)SteamVR_Input.actionsNonPoseNonSkeletonIn[actionIndex];
+
+                if (action.GetActive(inputSource))
+                    CreateAndAddButtonInfo(action, inputSource);
+            }
+
+            ComputeTextEndTransforms();
+
+            initialized = true;
+
+            //Set the controller hints render model to not active
+            renderModel.SetMeshRendererState(true);
+            renderModel.gameObject.SetActive(false);
+        }
 
 
 		//-------------------------------------------------
-		private void CreateAndAddButtonInfo(SteamVR_Input_Action_In action)
+		private void CreateAndAddButtonInfo(SteamVR_Action_In action, SteamVR_Input_Sources inputSource)
 		{
 			Transform buttonTransform = null;
 			List<MeshRenderer> buttonRenderers = new List<MeshRenderer>();
 
 			string buttonDebug = "Looking for action: " + action.GetShortName();
 
-            string actionComponentName = action.GetDeviceComponentName();
+            string actionComponentName = action.GetDeviceComponentName(inputSource);
 
             if (componentTransformMap.ContainsKey(actionComponentName))
             {
@@ -217,7 +248,7 @@ namespace Valve.VR.InteractionSystem
             }
             else
             {
-                buttonDebug += string.Format("Can't find component transform for action: {0}. Component name: \"{1}\"", action.GetShortName(), actionComponentName);
+                buttonDebug += string.Format("\nCan't find component transform for action: {0}. Component name: \"{1}\"", action.GetShortName(), actionComponentName);
             }
 
 			buttonDebug += "\nFound " + buttonRenderers.Count + " renderers for " + action.GetShortName();
@@ -241,7 +272,12 @@ namespace Valve.VR.InteractionSystem
 			hintInfo.renderers = buttonRenderers;
 
 			//Get the local transform for the button
-			hintInfo.localTransform = buttonTransform.Find( SteamVR_RenderModel.k_localTransformName );
+            for (int childIndex = 0; childIndex < buttonTransform.childCount; childIndex++)
+            {
+                Transform child = buttonTransform.GetChild(childIndex);
+                if (child.name == SteamVR_RenderModel.k_localTransformName)
+                    hintInfo.localTransform = child;
+            }
 
 			OffsetType offsetType = OffsetType.Right;
 
@@ -368,16 +404,24 @@ namespace Valve.VR.InteractionSystem
 				float endPosOffset = 0.1f;
 
 				Vector3 hintEndPos = hintInfo.Value.textStartAnchor.position + ( hintInfo.Value.textEndOffsetDir * endPosOffset ) + ( centerToButton * scale * 0.1f );
-				hintInfo.Value.textEndAnchor.position = hintEndPos;
 
-				hintInfo.Value.canvasOffset.position = hintEndPos;
+                if (SteamVR_Utils.IsValid(hintEndPos))
+                {
+                    hintInfo.Value.textEndAnchor.position = hintEndPos;
+
+                    hintInfo.Value.canvasOffset.position = hintEndPos;
+                }
+                else
+                {
+                    Debug.LogWarning("Invalid end position for: " + hintInfo.Value.textStartAnchor.name, hintInfo.Value.textStartAnchor.gameObject);
+                }
 				hintInfo.Value.canvasOffset.localRotation = Quaternion.identity;
 			}
 		}
 
 
 		//-------------------------------------------------
-		private void ShowButtonHint( params SteamVR_Input_Action_In[] actions )
+		private void ShowButtonHint( params SteamVR_Action_In[] actions )
 		{
 			renderModel.gameObject.SetActive( true );
 
@@ -423,7 +467,7 @@ namespace Valve.VR.InteractionSystem
 
 
 		//-------------------------------------------------
-		private void HideButtonHint( params SteamVR_Input_Action_In[] actions )
+		private void HideButtonHint( params SteamVR_Action_In[] actions )
 		{
 			Color baseColor = controllerMaterial.GetColor( colorID );
 			for ( int i = 0; i < actions.Length; i++ )
@@ -449,7 +493,7 @@ namespace Valve.VR.InteractionSystem
 
 
 		//-------------------------------------------------
-		private bool IsButtonHintActive(SteamVR_Input_Action_In action )
+		private bool IsButtonHintActive(SteamVR_Action_In action )
 		{
 			if ( actionHintInfos.ContainsKey(action) )
 			{
@@ -472,10 +516,10 @@ namespace Valve.VR.InteractionSystem
 		{
 			while ( true )
 			{
-                for (int actionIndex = 0; actionIndex < SteamVR_Input.actionsIn.Length; actionIndex++)
+                for (int actionIndex = 0; actionIndex < SteamVR_Input.actionsNonPoseNonSkeletonIn.Length; actionIndex++)
                 {
-                    SteamVR_Input_Action_In action = (SteamVR_Input_Action_In)SteamVR_Input.actionsIn[actionIndex];
-                    if (action.GetActive())
+                    SteamVR_Action_In action = (SteamVR_Action_In)SteamVR_Input.actionsNonPoseNonSkeletonIn[actionIndex];
+                    if (action.GetActive(inputSource))
                     {
                         ShowButtonHint(action);
                         yield return new WaitForSeconds(1.0f);
@@ -491,10 +535,10 @@ namespace Valve.VR.InteractionSystem
 		{
 			while ( true )
             {
-                for (int actionIndex = 0; actionIndex < SteamVR_Input.actionsIn.Length; actionIndex++)
+                for (int actionIndex = 0; actionIndex < SteamVR_Input.actionsNonPoseNonSkeletonIn.Length; actionIndex++)
                 {
-                    SteamVR_Input_Action_In action = (SteamVR_Input_Action_In)SteamVR_Input.actionsIn[actionIndex];
-                    if (action.GetActive())
+                    SteamVR_Action_In action = (SteamVR_Action_In)SteamVR_Input.actionsNonPoseNonSkeletonIn[actionIndex];
+                    if (action.GetActive(inputSource))
                     {
                         ShowText(action, action.GetShortName());
                         yield return new WaitForSeconds(3.0f);
@@ -523,11 +567,7 @@ namespace Valve.VR.InteractionSystem
 				if ( ticks - tickCount > 1.0f )
 				{
 					tickCount += 1.0f;
-					SteamVR_Controller.Device device = SteamVR_Controller.Input( (int)renderModel.index );
-					if ( device != null )
-					{
-						device.TriggerHapticPulse();
-					}
+                    hapticFlash.Execute(0, 0.005f, 0.005f, 1, inputSource);
 				}
 
 				for ( int i = 0; i < flashingRenderers.Count; i++ )
@@ -588,11 +628,11 @@ namespace Valve.VR.InteractionSystem
 
 
 		//-------------------------------------------------
-		private void ShowText( SteamVR_Input_Action_In action, string text, bool highlightButton = true )
-		{
-			if ( actionHintInfos.ContainsKey(action) )
-			{
-				ActionHintInfo hintInfo = actionHintInfos[action];
+		private void ShowText( SteamVR_Action_In action, string text, bool highlightButton = true )
+        {
+            if ( actionHintInfos.ContainsKey(action) )
+            {
+                ActionHintInfo hintInfo = actionHintInfos[action];
 				hintInfo.textHintObject.SetActive( true );
 				hintInfo.textHintActive = true;
 
@@ -619,7 +659,7 @@ namespace Valve.VR.InteractionSystem
 
 
 		//-------------------------------------------------
-		private void HideText(SteamVR_Input_Action_In action)
+		private void HideText(SteamVR_Action_In action)
 		{
 			if ( actionHintInfos.ContainsKey(action) )
 			{
@@ -650,7 +690,7 @@ namespace Valve.VR.InteractionSystem
 
 
 		//-------------------------------------------------
-		private string GetActiveHintText( SteamVR_Input_Action_In action )
+		private string GetActiveHintText( SteamVR_Action_In action )
 		{
 			if ( actionHintInfos.ContainsKey(action) )
 			{
@@ -685,7 +725,7 @@ namespace Valve.VR.InteractionSystem
 
 
 		//-------------------------------------------------
-		public static void ShowButtonHint( Hand hand, params SteamVR_Input_Action_In[] actions )
+		public static void ShowButtonHint( Hand hand, params SteamVR_Action_In[] actions )
 		{
 			ControllerButtonHints hints = GetControllerButtonHints( hand );
 			if ( hints != null )
@@ -696,7 +736,7 @@ namespace Valve.VR.InteractionSystem
 
 
 		//-------------------------------------------------
-		public static void HideButtonHint( Hand hand, params SteamVR_Input_Action_In[] actions )
+		public static void HideButtonHint( Hand hand, params SteamVR_Action_In[] actions )
 		{
 			ControllerButtonHints hints = GetControllerButtonHints( hand );
 			if ( hints != null )
@@ -718,7 +758,7 @@ namespace Valve.VR.InteractionSystem
 
 
 		//-------------------------------------------------
-		public static bool IsButtonHintActive( Hand hand, SteamVR_Input_Action_In action )
+		public static bool IsButtonHintActive( Hand hand, SteamVR_Action_In action )
 		{
 			ControllerButtonHints hints = GetControllerButtonHints( hand );
 			if ( hints != null )
@@ -731,9 +771,9 @@ namespace Valve.VR.InteractionSystem
 
 
 		//-------------------------------------------------
-		public static void ShowTextHint( Hand hand, SteamVR_Input_Action_In action, string text, bool highlightButton = true )
-		{
-			ControllerButtonHints hints = GetControllerButtonHints( hand );
+		public static void ShowTextHint( Hand hand, SteamVR_Action_In action, string text, bool highlightButton = true )
+        {
+            ControllerButtonHints hints = GetControllerButtonHints( hand );
 			if ( hints != null )
 			{
 				hints.ShowText(action, text, highlightButton );
@@ -742,7 +782,7 @@ namespace Valve.VR.InteractionSystem
 
 
 		//-------------------------------------------------
-		public static void HideTextHint( Hand hand, SteamVR_Input_Action_In action)
+		public static void HideTextHint( Hand hand, SteamVR_Action_In action)
 		{
 			ControllerButtonHints hints = GetControllerButtonHints( hand );
 			if ( hints != null )
@@ -764,7 +804,7 @@ namespace Valve.VR.InteractionSystem
 
 
 		//-------------------------------------------------
-		public static string GetActiveHintText( Hand hand, SteamVR_Input_Action_In action)
+		public static string GetActiveHintText( Hand hand, SteamVR_Action_In action)
 		{
 			ControllerButtonHints hints = GetControllerButtonHints( hand );
 			if ( hints != null )

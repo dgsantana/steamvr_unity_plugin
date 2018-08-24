@@ -1,10 +1,141 @@
-SteamVR plugin for Unity - v1.3b08
+# SteamVR Unity Plugin - v2.0rc3
+
 Copyright (c) Valve Corporation, All rights reserved.
 
 
 Requirements:
 
 The SteamVR runtime must be installed.  This can be found in Steam under Tools.
+
+
+Changes for v2.0rc3:
+ 
+ * Added some pdf documentation for the new plugin and input system
+
+ * Added code documentation to most public functions in the input system
+
+ * Removed SteamVR_Camera from prefabs as this is no longer necessary
+
+ * Added simple rc car example ported from Knuckles Tech Demo
+
+ * Added simple platformer example
+
+ * Switched hover highlights to highlight the object being interacted with instead of the controller. Can be reenabled in the player prefab.
+
+ * Fixed some upgrading issues for Unity 2018
+
+ * Added glcore to a few of the shaders to make them opengl compatible
+
+ * Fixed a code generation issue that was generating static members instead of instance members, making actions inside sets unavailable.
+
+ * Added scrollview to LiveWindow
+
+ * Fixed some issues with action sets
+
+ * Added DefaultActionSet attribute to specify a default action set to be assigned to fields/properties on input generation
+
+ * Updated some scriptable object fields to not serialize things unintentionally
+
+ * Made initialization a little more streamlined.
+
+ * Added an event you can subscribe to for when initialization is completed (SteamVR_Events.Initialized(bool)). The bool indicates success
+
+ * Improved editor UI for action / action set assignment
+
+ * Made the example button do something on press
+
+Changes for v2.0rc2:
+
+ * Added built in support for delayed loading of SteamVR. You can now call SteamVR.Initialize() and pass a boolean to force set unity to OpenVR mode.
+
+ * Added a new Simple Sample scene in the root to do super basic testing.
+
+ * Moved SteamVR Input updating to SteamVR_Behaviour which also handles the SteamVR_Render component. This will be added to scenes at runtime.
+
+ * Added ability to explicitly show or hide controller model in the interaction system
+
+ * Gave the interaction system scene a new paint job
+
+ * Auto scaling the teleporter beam to the player size
+
+ * Added a new quickstart pdf
+
+ * Fixed issue for Unity 5.6 not showing controllers
+
+ * Fixed issue for 2018.2 not opening the input window properly
+
+ * Minor performance increases
+
+ * Updated initialization process to support having XR set to none or Oculus initially.
+ 
+ * Moved some of example jsons files into a more reasonable directory.
+
+
+Changes for v2.0rc1:
+
+ * Namespacing all SteamVR scripts. This will be a breaking change for most projects but this is a major revision.
+
+ * Renamed most of the input classes to have a more reasonable length. Generally removed _Input_ as it's redundant in most places
+
+ * Fixed some issues with newer versions of Unity throwing errors during action generation
+ 
+ * Fixed some issues with scenes not opening properly during generation on newer versions of Unity
+
+ * Removing SteamVR_Settings from plugin, it should be auto generated so new versions of the plugin don't overwrite it
+
+ * Fixed some performance issues surrounding using the legacy input system at the same time as the new input system. This is not a supported scenario.
+
+ * Minor performance increases around render model loading.
+
+ * Removed some legacy system scripts
+
+ * Fixed the button hint system
+
+ * Consolidated the skeleton options
+
+
+Changes for v1.3b10:
+
+ * Fixed a couple issues that would cause tracking jitter or entire loss of input
+
+ * Fixed an issue with destroying held objects
+
+
+Changes for v1.3b09:
+
+ * Newly created action sets default to "single" mode allowing action mirroring in the binding UI.
+
+ * Added an example of blending unity animations with the skeleton input system. The sphere on the Equippable table can be grabbed and the hand will blend to an animation.
+
+ * Interactables now hand a hideHandOnAttach bool, a handAnimationOnPickup int that triggers an Animator.SetInt, and setRangeOfMotionOnPickup which will temporarily set the range of motion while an object is attached.
+
+ * Added a tool example for "With Controller" hand animation examples. Equippables can also be flipped depending on the hand that picks them up.
+
+ * Interactables now can tell hands to snap to them on attach. Specify a transform to snap to in Interactable.handFollowTransform and then check handFollowTransformPosition and/or handFollowTransformRotation
+
+ * Added Range of Motion blending to skeleton - Hand.SetSkeletonRangeOfMotion(rangeOfMotion, blendTime)
+
+ * Updated skeleton system to account for coordinate system changes
+
+ * Fixed some perf issues with the old render models (WIP)
+
+ * Fixed some bugs with button hints (WIP)
+
+ * Interactables should now auto detach on destroy.
+
+ * Added slim glove models, an example of an alien hand with 3 fingers, and an alien hand with floppy fingers
+
+ * Hands now initialize a RenderModel object which can contain a hand and a controller. These can be toggled on and off separately
+
+ * Fixed issue with controller highlighters not initializing correctly
+
+ * Added the ability to attach an object to a specific offset from the Hand - Hand.ObjectAttachmentPoint
+
+ * Fixed issue where render model would not show after bringing up compositor
+
+ * Fixed issue with default Throwables. HoverButton now works in local space
+
+ * Fixed issue with velocities and angular velocities not transforming properly
 
 
 Changes for v1.3b08:
